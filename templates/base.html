@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Fotobox Uploader{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #1a1a2e; color: #eee; min-height: 100vh; }
+        .navbar { background: #16213e !important; }
+        .card { background: #16213e; border-color: #0f3460; color: #eee; }
+        .card-header { border-color: #0f3460; }
+        .list-group-item { background: #1a1a3e; border-color: #0f3460; color: #eee; }
+        .list-group-item:hover { background: #0f3460; }
+        a.list-group-item:hover { color: #fff; }
+        .btn-activate { background: #e94560; border: none; color: #fff; }
+        .btn-activate:hover { background: #c23152; color: #fff; }
+        .status-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+        .status-dot.online { background: #4ecca3; }
+        .status-dot.offline { background: #e94560; }
+        .progress { background: #0f3460; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-camera-fill me-2"></i>Fotobox Uploader
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                {% if config is defined and config.environments is defined %}
+                <div class="btn-group btn-group-sm me-2" role="group">
+                    {% if config.active_environment == 'production' %}
+                        <span class="btn btn-success"><i class="bi bi-shield-check me-1"></i>Prod</span>
+                        <a href="/switch-env/test" class="btn btn-outline-info"
+                           onclick="return confirm('Zu Q-System (Test) wechseln?\nAktives Event wird deaktiviert.')">Test</a>
+                    {% else %}
+                        <a href="/switch-env/production" class="btn btn-outline-success"
+                           onclick="return confirm('Zu Produktiv wechseln?\nAktives Event wird deaktiviert.')">Prod</a>
+                        <span class="btn btn-info"><i class="bi bi-bug me-1"></i>Test</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+                <a href="/" class="btn btn-sm btn-outline-light"><i class="bi bi-house me-1"></i>Start</a>
+                <a href="/events" class="btn btn-sm btn-outline-light"><i class="bi bi-calendar-event me-1"></i>Events</a>
+                <a href="/settings" class="btn btn-sm btn-outline-light"><i class="bi bi-gear me-1"></i>Einstellungen</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

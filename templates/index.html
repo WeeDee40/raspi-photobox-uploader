@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Fotobox Uploader — Start{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Status -->
+    <div class="col-md-8 mb-4">
+
+        {% if not configured %}
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>Nicht konfiguriert.</strong>
+            Bitte zuerst unter <a href="/settings" class="alert-link">Einstellungen</a> den API-Key und die Shop-URL eintragen.
+        </div>
+        {% endif %}
+
+        <!-- Aktives Event -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-camera-reels me-2"></i>Aktives Event</h5>
+                <span>
+                    <span class="status-dot {{ 'online' if internet else 'offline' }}"></span>
+                    <small class="ms-1">{{ 'Online' if internet else 'Offline' }}</small>
+                </span>
+            </div>
+            <div class="card-body">
+                {% if event %}
+                    <h4>{{ event.event_name }}</h4>
+                    <div class="row mt-3">
+                        <div class="col-sm-6">
+                            <p class="mb-1"><i class="bi bi-calendar me-1"></i> <strong>Datum:</strong> {{ event.event_date }}</p>
+                            <p class="mb-1"><i class="bi bi-person me-1"></i> <strong>Kunde:</strong> {{ event.customer_name }}</p>
+                        </div>
+                        <div class="col-sm-6">
+                            <p class="mb-1"><i class="bi bi-geo-alt me-1"></i> <strong>Ort:</strong> {{ event.location or '—' }}</p>
+                            <p class="mb-1"><i class="bi bi-images me-1"></i> <strong>Fotos im Shop:</strong> {{ event.photos_count or 0 }}</p>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="d-flex gap-2">
+                        <form method="POST" action="/upload">
+                            <button type="submit" class="btn btn-lg btn-success" {{ 'disabled' if upload_status.running or not internet }}>
+                                <i class="bi bi-cloud-upload me-2"></i>Fotos jetzt hochladen
+                            </button>
+                        </form>
+                        <a href="/deactivate" class="btn btn-lg btn-outline-danger"
+                           onclick="return confirm('Event wirklich deaktivieren?')">
+                            <i class="bi bi-x-circle me-1"></i>Deaktivieren
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-camera" style="font-size: 3rem; opacity: 0.3;"></i>
+                        <p class="mt-3 mb-3 text-muted">Kein Event aktiviert.</p>
+                        <a href="/events" class="btn btn-activate btn-lg">
+                            <i class="bi bi-calendar-event me-2"></i>Event auswählen
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Upload-Fortschritt -->
+        {% if upload_status.running or upload_status.total > 0 %}
+        <div class="card mb-4" id="progressCard">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-2"></i>Upload-Fortschritt</h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3" style="height: 25px;">
+                    {% set pct = ((upload_status.done + upload_status.failed) / upload_status.total * 100) if upload_status.total > 0 else 0 %}
+                    <div class="progress-bar bg-success" id="progressBar" style="width: {{ pct|int }}%">
+                        {{ pct|int }}%
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span id="statusMsg">{{ upload_status.message }}</span>
+                    <span>
+                        <span class="badge bg-success" id="doneCount">{{ upload_status.done }}</span> hochgeladen
+                        {% if upload_status.failed > 0 %}
+                        <span class="badge bg-danger ms-2" id="failCount">{{ upload_status.failed }}</span> fehlgeschlagen
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="mt-2 text-muted small" id="currentFile">
+                    {{ upload_status.current_file }}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-md-4 mb-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Upload-Statistik</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-1">Heute: <strong>{{ stats.today }}</strong> Fotos</p>
+                <p class="mb-0">Gesamt: <strong>{{ stats.total }}</strong> Fotos</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Verbindung</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-1">
+                    Umgebung:
+                    {% if config.active_environment == 'production' %}
+                        <span class="badge bg-success">Produktiv</span>
+                    {% else %}
+                        <span class="badge bg-info">Q-System</span>
+                    {% endif %}
+                </p>
+                <p class="mb-1">Shop: <code class="text-info">{{ config.shop_url }}</code></p>
+                <p class="mb-1">Foto-Pfad: <code class="text-info">{{ config.photo_path }}</code></p>
+                <p class="mb-0">
+                    Status:
+                    <span class="status-dot {{ 'online' if internet else 'offline' }}"></span>
+                    {{ 'Verbunden' if internet else 'Nicht erreichbar' }}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if upload_status.running %}
+<script>
+(function poll() {
+    fetch('/api/upload-status')
+        .then(r => r.json())
+        .then(data => {
+            const total = data.total || 1;
+            const pct = Math.round((data.done + data.failed) / total * 100);
+
+            const bar = document.getElementById('progressBar');
+            if (bar) { bar.style.width = pct + '%'; bar.textContent = pct + '%'; }
+
+            const msg = document.getElementById('statusMsg');
+            if (msg) msg.textContent = data.message;
+
+            const done = document.getElementById('doneCount');
+            if (done) done.textContent = data.done;
+
+            const cur = document.getElementById('currentFile');
+            if (cur) cur.textContent = data.current_file;
+
+            if (data.running) {
+                setTimeout(poll, 1000);
+            } else {
+                setTimeout(() => location.reload(), 2000);
+            }
+        })
+        .catch(() => setTimeout(poll, 3000));
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,18 @@
+{
+    "environments": {
+        "production": {
+            "name": "Produktiv",
+            "shop_url": "https://rent4events.ch",
+            "api_key": "DEIN-PRODUKTIV-API-KEY-HIER"
+        },
+        "test": {
+            "name": "Q-System",
+            "shop_url": "https://hosting217409.ae921.netcup.net",
+            "api_key": "DEIN-TEST-API-KEY-HIER"
+        }
+    },
+    "active_environment": "production",
+    "photo_path": "/home/patrick/pibooth",
+    "check_interval": 60,
+    "supported_extensions": [".jpg", ".jpeg", ".png"]
+}

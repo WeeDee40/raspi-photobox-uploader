@@ -1,0 +1,18 @@
+# Konfiguration (enthält API-Keys!)
+config.json
+
+# Lokale Daten
+uploads.db
+active_event.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
