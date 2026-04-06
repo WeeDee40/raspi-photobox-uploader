@@ -20,6 +20,7 @@ from uploader import (
     api_get_active_events,
     api_get_event_status,
     api_upload_photo,
+    api_download_template,
     get_new_photos,
     init_db,
     mark_uploaded,
@@ -113,7 +114,27 @@ def activate(event_id):
     result = api_get_event_status(config, event_id)
 
     if result["success"]:
-        save_active_event(result["event"])
+        event = result["event"]
+
+        # Template herunterladen wenn der Shop eines bereitstellt
+        template_url = event.get("template_url")
+        template_path = config.get("template_path", "")
+        template_ok = None  # None = kein Template; True = OK; False = Fehler
+
+        if template_url and template_path:
+            dl = api_download_template(config, template_url, template_path)
+            template_ok = dl["success"]
+            if not template_ok:
+                print(f"[ACTIVATE] Template-Download fehlgeschlagen: {dl.get('error')}")
+        elif template_url and not template_path:
+            print("[ACTIVATE] Template verfügbar, aber kein template_path konfiguriert.")
+
+        # Status im Event-Objekt mitführen (für die UI)
+        event["_template_url"] = template_url or ""
+        event["_template_ok"] = template_ok
+
+        save_active_event(event)
+
     return redirect(url_for("index"))
 
 
@@ -181,6 +202,7 @@ def settings():
 
         # Gemeinsame Einstellungen
         raw_config["photo_path"] = request.form.get("photo_path", "")
+        raw_config["template_path"] = request.form.get("template_path", "")
         raw_config["check_interval"] = int(
             request.form.get("check_interval", 60)
         )

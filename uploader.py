@@ -58,6 +58,7 @@ def _default_raw_config():
         },
         "active_environment": "production",
         "photo_path": "/home/patrick/Pictures",
+        "template_path": "/home/patrick/.config/pibooth/template.xml",
         "check_interval": 60,
         "supported_extensions": [".jpg", ".jpeg", ".png"],
     }
@@ -120,6 +121,7 @@ def load_config(config_path):
         "shop_url": env_data.get("shop_url", ""),
         "api_key": env_data.get("api_key", ""),
         "photo_path": raw.get("photo_path", ""),
+        "template_path": raw.get("template_path", ""),
         "check_interval": raw.get("check_interval", 60),
         "supported_extensions": raw.get("supported_extensions", [".jpg", ".jpeg", ".png"]),
         "active_environment": active_env,
@@ -423,4 +425,61 @@ def api_upload_photo(config, event_id, photo_path):
         return {"success": False, "error": "Upload-Zeitüberschreitung."}
     except Exception as e:
         print(f"[UPLOAD] FEHLER: {filename} -> {e}")
+        return {"success": False, "error": str(e)}
+
+
+def api_download_template(config, template_url, save_path):
+    """Lädt das Draw.io Template-XML vom Shop herunter und speichert es lokal.
+
+    Wird beim Event-Aktivieren aufgerufen, damit pibooth-picture-template
+    das aktuelle Layout für das Event verwendet.
+
+    Args:
+        config:       Konfiguration (wird für API-Headers benötigt)
+        template_url: Vollständige URL zum Template-XML (aus event.template_url)
+        save_path:    Lokaler Dateipfad wo das XML gespeichert werden soll
+
+    Returns:
+        dict: {"success": True} oder {"success": False, "error": "..."}
+    """
+    print(f"[TEMPLATE] Download: {template_url}")
+    print(f"[TEMPLATE] Speicherpfad: {save_path}")
+
+    try:
+        resp = requests.get(
+            template_url,
+            headers=_api_headers(config),
+            timeout=REQUEST_TIMEOUT,
+        )
+
+        if resp.status_code != 200:
+            print(f"[TEMPLATE] FEHLER: HTTP {resp.status_code}")
+            return {"success": False, "error": f"HTTP {resp.status_code}"}
+
+        xml_content = resp.text
+        if "<mxfile" not in xml_content:
+            print("[TEMPLATE] FEHLER: Kein gültiges Draw.io XML empfangen")
+            return {"success": False, "error": "Kein gültiges Template-XML empfangen."}
+
+        # Verzeichnis anlegen falls nicht vorhanden
+        save_dir = os.path.dirname(save_path)
+        if save_dir and not os.path.isdir(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+            print(f"[TEMPLATE] Verzeichnis erstellt: {save_dir}")
+
+        Path(save_path).write_text(xml_content, encoding="utf-8")
+        print(f"[TEMPLATE] OK: {len(xml_content)} Zeichen -> {save_path}")
+        return {"success": True}
+
+    except requests.ConnectionError:
+        print("[TEMPLATE] FEHLER: Keine Verbindung")
+        return {"success": False, "error": "Keine Verbindung zum Shop."}
+    except requests.Timeout:
+        print("[TEMPLATE] FEHLER: Timeout")
+        return {"success": False, "error": "Zeitüberschreitung beim Template-Download."}
+    except OSError as e:
+        print(f"[TEMPLATE] FEHLER beim Speichern: {e}")
+        return {"success": False, "error": f"Datei konnte nicht gespeichert werden: {e}"}
+    except Exception as e:
+        print(f"[TEMPLATE] FEHLER: {e}")
         return {"success": False, "error": str(e)}

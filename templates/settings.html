@@ -69,6 +69,18 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label">Template-Pfad (pibooth-picture-template)</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary"
+                               name="template_path" value="{{ config.template_path }}"
+                               placeholder="/home/patrick/.config/pibooth/template.xml">
+                        <div class="form-text text-muted">
+                            Vollständiger Dateipfad wo das Draw.io Template-XML gespeichert wird.
+                            Wird beim Event-Aktivieren automatisch vom Shop heruntergeladen.
+                            Leer lassen wenn kein Template-Plugin genutzt wird.
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <label class="form-label">Prüf-Intervall (Sekunden)</label>
                         <input type="number" class="form-control bg-dark text-light border-secondary"

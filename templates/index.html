@@ -36,6 +36,25 @@
                             <p class="mb-1"><i class="bi bi-images me-1"></i> <strong>Fotos im Shop:</strong> {{ event.photos_count or 0 }}</p>
                         </div>
                     </div>
+                    <!-- Template-Status -->
+                    {% if event._template_url %}
+                    <div class="d-flex align-items-center gap-2 mt-2 mb-1">
+                        <i class="bi bi-layout-text-window text-muted"></i>
+                        <small class="text-muted">Template:</small>
+                        {% if event._template_ok == true %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-lg me-1"></i>Heruntergeladen
+                            </span>
+                        {% elif event._template_ok == false %}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Download fehlgeschlagen
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary">Kein template_path konfiguriert</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
                     <hr>
                     <div class="d-flex gap-2">
                         <form method="POST" action="/upload">
