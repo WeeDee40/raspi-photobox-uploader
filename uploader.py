@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -17,19 +18,27 @@ _BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = _BASE_DIR / "uploads.db"
 
 
+_NEW_SCHEMA = """
+    CREATE TABLE uploaded_photos (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_fingerprint TEXT NOT NULL,
+        file_path   TEXT NOT NULL,
+        event_id    INTEGER NOT NULL,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(file_fingerprint, event_id)
+    )
+"""
+
+
 def _ensure_db():
-    """Erstellt die DB und Tabelle sofort beim Import."""
+    """Erstellt die DB sofort beim Import, falls noch nicht vorhanden."""
     conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS uploaded_photos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_fingerprint TEXT NOT NULL UNIQUE,
-            file_path TEXT NOT NULL,
-            event_id INTEGER NOT NULL,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
+    exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE name='uploaded_photos'"
+    ).fetchone()
+    if not exists:
+        conn.execute(_NEW_SCHEMA)
+        conn.commit()
     count = conn.execute("SELECT COUNT(*) FROM uploaded_photos").fetchone()[0]
     conn.close()
     print(f"[DB] Datenbank initialisiert: {DB_PATH} ({count} Fotos getrackt)")
@@ -60,6 +69,7 @@ def _default_raw_config():
         "photo_path": "/home/patrick/Pictures",
         "template_path": "/home/patrick/.config/pibooth/template.xml",
         "check_interval": 60,
+        "activation_buffer_minutes": 5,
         "supported_extensions": [".jpg", ".jpeg", ".png"],
     }
 
@@ -123,6 +133,7 @@ def load_config(config_path):
         "photo_path": raw.get("photo_path", ""),
         "template_path": raw.get("template_path", ""),
         "check_interval": raw.get("check_interval", 60),
+        "activation_buffer_minutes": raw.get("activation_buffer_minutes", 5),
         "supported_extensions": raw.get("supported_extensions", [".jpg", ".jpeg", ".png"]),
         "active_environment": active_env,
         "env_name": env_data.get("name", active_env),
@@ -139,53 +150,62 @@ def save_config(config_path, config):
 
 
 def init_db(db_path):
-    """Erstellt die SQLite-Datenbank für Upload-Tracking.
-    GLOBALES Tracking: Ein Foto wird nur EIN MAL hochgeladen, egal welches Event."""
+    """Initialisiert die SQLite-Datenbank für Upload-Tracking (per-Event-Schema).
+
+    Migriert automatisch von älteren Schemas:
+      v0: (file_path, event_id)                          → kein Fingerprint
+      v1: file_fingerprint UNIQUE (global)               → ein Foto immer global gesperrt
+      v2: UNIQUE(file_fingerprint, event_id) [aktuell]   → Foto kann pro Event einmal hochgeladen werden
+    """
     print(f"[DB] Initialisiere Datenbank: {db_path}")
     db = sqlite3.connect(str(db_path))
 
-    # Migration: alte Tabelle mit (file_path, event_id) durch globale ersetzen
     cursor = db.execute("SELECT sql FROM sqlite_master WHERE name='uploaded_photos'")
     row = cursor.fetchone()
-    if row and "event_id" in (row[0] or "") and "file_fingerprint" not in (row[0] or ""):
-        print("[DB] Migration: Alte Tabelle gefunden, migriere auf globales Tracking...")
-        db.execute("ALTER TABLE uploaded_photos RENAME TO uploaded_photos_old")
-        db.execute("""
-            CREATE TABLE uploaded_photos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_fingerprint TEXT NOT NULL UNIQUE,
-                file_path TEXT NOT NULL,
-                event_id INTEGER NOT NULL,
-                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        db.execute("""
-            INSERT OR IGNORE INTO uploaded_photos (file_fingerprint, file_path, event_id, uploaded_at)
-            SELECT file_path || ':' || event_id, file_path, event_id, uploaded_at
-            FROM uploaded_photos_old
-        """)
-        db.execute("DROP TABLE uploaded_photos_old")
-        db.commit()
-        print("[DB] Migration abgeschlossen")
-    elif row:
-        print(f"[DB] Tabelle existiert bereits (globales Schema)")
-    else:
-        print("[DB] Erstelle neue Tabelle uploaded_photos")
+    sql = (row[0] or "").upper() if row else ""
 
-    # Tabelle erstellen falls komplett neu
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS uploaded_photos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_fingerprint TEXT NOT NULL UNIQUE,
-            file_path TEXT NOT NULL,
-            event_id INTEGER NOT NULL,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    db.commit()
+    if not row:
+        # Frische Installation → direkt neues Schema anlegen
+        db.execute(_NEW_SCHEMA)
+        db.commit()
+        print("[DB] Neue Tabelle erstellt (per-Event-Schema v2)")
+
+    elif "FILE_FINGERPRINT TEXT NOT NULL UNIQUE" in sql:
+        # v1 → v2: Globales Dedup → per-Event-Dedup
+        print("[DB] Migration v1→v2: Globales Schema → per-Event-Schema...")
+        db.execute("ALTER TABLE uploaded_photos RENAME TO _uploaded_photos_v1")
+        db.execute(_NEW_SCHEMA)
+        db.execute("""
+            INSERT OR IGNORE INTO uploaded_photos
+                (file_fingerprint, file_path, event_id, uploaded_at)
+            SELECT file_fingerprint, file_path, event_id, uploaded_at
+            FROM _uploaded_photos_v1
+        """)
+        db.execute("DROP TABLE _uploaded_photos_v1")
+        db.commit()
+        print("[DB] Migration v1→v2 abgeschlossen")
+
+    elif "FILE_FINGERPRINT" not in sql and "EVENT_ID" in sql:
+        # v0 → v2: Ur-Schema ohne Fingerprint
+        print("[DB] Migration v0→v2: Ur-Schema → per-Event-Schema...")
+        db.execute("ALTER TABLE uploaded_photos RENAME TO _uploaded_photos_v0")
+        db.execute(_NEW_SCHEMA)
+        db.execute("""
+            INSERT OR IGNORE INTO uploaded_photos
+                (file_fingerprint, file_path, event_id, uploaded_at)
+            SELECT file_path || ':' || CAST(event_id AS TEXT),
+                   file_path, event_id, uploaded_at
+            FROM _uploaded_photos_v0
+        """)
+        db.execute("DROP TABLE _uploaded_photos_v0")
+        db.commit()
+        print("[DB] Migration v0→v2 abgeschlossen")
+
+    else:
+        print("[DB] Schema aktuell (per-Event v2)")
 
     count = db.execute("SELECT COUNT(*) FROM uploaded_photos").fetchone()[0]
-    print(f"[DB] Bereit. {count} Fotos bereits getrackt.")
+    print(f"[DB] Bereit. {count} Fotos getrackt.")
     return db
 
 
@@ -204,17 +224,17 @@ def _file_fingerprint(file_path):
         return None
 
 
-def is_uploaded(db, file_path):
-    """Prüft ob ein Foto bereits hochgeladen wurde (GLOBAL, event-unabhängig)."""
+def is_uploaded(db, file_path, event_id):
+    """Prüft ob ein Foto bereits zu diesem Event hochgeladen wurde (per-Event)."""
     fp = _file_fingerprint(file_path)
     if fp is None:
         print(f"[CHECK] {os.path.basename(file_path)}: Fingerprint fehlgeschlagen, gilt als NEU")
         return False
     cursor = db.execute(
-        "SELECT 1 FROM uploaded_photos WHERE file_fingerprint = ?", (fp,)
+        "SELECT 1 FROM uploaded_photos WHERE file_fingerprint = ? AND event_id = ?",
+        (fp, event_id),
     )
-    found = cursor.fetchone() is not None
-    return found
+    return cursor.fetchone() is not None
 
 
 def mark_uploaded(db, file_path, event_id):
@@ -249,14 +269,35 @@ def get_upload_stats(db_path):
 # ── Foto-Discovery ────────────────────────────────────────────────────
 
 
-def get_new_photos(db, config):
-    """Findet alle neuen (noch nie hochgeladenen) Fotos im Hauptverzeichnis.
-    Nur Dateien direkt in photo_path — keine Unterordner (raw/, forget/ etc.).
-    Prüfung ist GLOBAL — einmal hochgeladen = für immer gesperrt."""
+def get_new_photos(db, config, event_id, activated_at_ts=None, buffer_minutes=5):
+    """Findet alle Fotos die für dieses Event hochgeladen werden sollen.
+
+    Zwei Filter werden angewendet:
+      1. Zeitfenster: Datei-mtime >= activated_at_ts - buffer_minutes
+         → Fotos von vor dem Event werden automatisch ausgeschlossen.
+      2. Per-Event-Dedup: Noch nicht zu diesem Event hochgeladen.
+         → Dasselbe Foto kann zu verschiedenen Events gehören.
+
+    Args:
+        db:               Datenbankverbindung
+        config:           Konfiguration
+        event_id:         ID des aktiven Events
+        activated_at_ts:  Unix-Timestamp des Event-Aktivierungszeitpunkts (float)
+        buffer_minutes:   Toleranzpuffer vor activated_at (Standard: 5 Min.)
+    """
     photo_path = config.get("photo_path", "")
     extensions = config.get("supported_extensions", [".jpg", ".jpeg", ".png"])
 
-    print(f"[SCAN] Suche Fotos in: {photo_path} (nur Hauptverzeichnis)")
+    # Zeitgrenze berechnen
+    cutoff_ts = None
+    if activated_at_ts is not None:
+        cutoff_ts = activated_at_ts - (buffer_minutes * 60)
+        cutoff_str = datetime.fromtimestamp(cutoff_ts).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[SCAN] Zeitfenster: >= {cutoff_str} (Buffer: {buffer_minutes} Min.)")
+    else:
+        print(f"[SCAN] Kein Aktivierungs-Zeitstempel — kein Zeitfilter aktiv")
+
+    print(f"[SCAN] Suche Fotos in: {photo_path} | Event {event_id}")
     print(f"[SCAN] Erlaubte Endungen: {extensions}")
 
     if not photo_path:
@@ -267,14 +308,13 @@ def get_new_photos(db, config):
         print(f"[SCAN] ABBRUCH: Verzeichnis existiert nicht: {photo_path}")
         return []
 
-    all_photos = []
     new_photos = []
-    skipped = 0
+    skipped_time = 0
+    skipped_dup  = 0
 
     for filename in sorted(os.listdir(photo_path)):
         full_path = os.path.join(photo_path, filename)
 
-        # Nur Dateien, keine Unterordner
         if not os.path.isfile(full_path):
             continue
 
@@ -282,19 +322,30 @@ def get_new_photos(db, config):
         if ext not in extensions:
             continue
 
-        all_photos.append(full_path)
-        fp = _file_fingerprint(full_path)
-        already = is_uploaded(db, full_path)
+        stat = os.stat(full_path)
 
-        if already:
-            skipped += 1
+        # Filter 1: Zeitfenster
+        if cutoff_ts is not None and stat.st_mtime < cutoff_ts:
+            skipped_time += 1
+            print(f"[SCAN] SKIP (vor Aktivierung): {filename}  mtime={stat.st_mtime:.0f}")
+            continue
+
+        # Filter 2: Per-Event-Dedup
+        if is_uploaded(db, full_path, event_id):
+            fp = _file_fingerprint(full_path)
+            skipped_dup += 1
             print(f"[SCAN] SKIP (bereits hochgeladen): {filename}  FP={fp[:12] if fp else '???'}...")
-        else:
-            new_photos.append(full_path)
-            stat = os.stat(full_path)
-            print(f"[SCAN] NEU:  {filename}  FP={fp[:12] if fp else '???'}...  Size={stat.st_size}  Mtime={stat.st_mtime}")
+            continue
 
-    print(f"[SCAN] Ergebnis: {len(all_photos)} Fotos total, {len(new_photos)} neu, {skipped} übersprungen")
+        fp = _file_fingerprint(full_path)
+        new_photos.append(full_path)
+        print(f"[SCAN] NEU:  {filename}  FP={fp[:12] if fp else '???'}...  Size={stat.st_size}")
+
+    total = len(new_photos) + skipped_time + skipped_dup
+    print(
+        f"[SCAN] Ergebnis: {total} Fotos total, {len(new_photos)} neu, "
+        f"{skipped_time} vor Aktivierung, {skipped_dup} bereits hochgeladen"
+    )
     return new_photos
 
 

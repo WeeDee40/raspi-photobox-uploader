@@ -9,6 +9,7 @@ import os
 import sqlite3
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
@@ -116,6 +117,9 @@ def activate(event_id):
     if result["success"]:
         event = result["event"]
 
+        # Aktivierungs-Zeitstempel setzen (für Zeitfenster-Filter beim Upload)
+        event["_activated_at"] = datetime.now(timezone.utc).isoformat()
+
         # Template herunterladen wenn der Shop eines bereitstellt
         template_url = event.get("template_url")
         template_path = config.get("template_path", "")
@@ -203,8 +207,9 @@ def settings():
         # Gemeinsame Einstellungen
         raw_config["photo_path"] = request.form.get("photo_path", "")
         raw_config["template_path"] = request.form.get("template_path", "")
-        raw_config["check_interval"] = int(
-            request.form.get("check_interval", 60)
+        raw_config["check_interval"] = int(request.form.get("check_interval", 60))
+        raw_config["activation_buffer_minutes"] = int(
+            request.form.get("activation_buffer_minutes", 5)
         )
 
         save_config(CONFIG_PATH, raw_config)
@@ -223,10 +228,25 @@ def run_upload(config, event):
 
     event_id = event["id"]
     event_name = event.get("event_name", "?")
+
+    # Aktivierungs-Zeitstempel für Zeitfenster-Filter
+    activated_at_ts = None
+    activated_at_str = event.get("_activated_at", "")
+    if activated_at_str:
+        try:
+            activated_at_ts = datetime.fromisoformat(activated_at_str).timestamp()
+        except (ValueError, TypeError):
+            pass
+
+    buffer_minutes = config.get("activation_buffer_minutes", 5)
+
     print(f"\n{'='*60}")
     print(f"[UPLOAD-JOB] Start für Event {event_id}: {event_name}")
     print(f"[UPLOAD-JOB] Shop: {config.get('shop_url')}")
     print(f"[UPLOAD-JOB] Foto-Pfad: {config.get('photo_path')}")
+    if activated_at_ts:
+        act_str = datetime.fromtimestamp(activated_at_ts).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[UPLOAD-JOB] Aktiviert: {act_str} (Buffer: {buffer_minutes} Min.)")
     print(f"{'='*60}")
 
     upload_status["running"] = True
@@ -237,7 +257,7 @@ def run_upload(config, event):
 
     try:
         db = init_db(DB_PATH)
-        new_photos = get_new_photos(db, config)
+        new_photos = get_new_photos(db, config, event_id, activated_at_ts, buffer_minutes)
         upload_status["total"] = len(new_photos)
 
         if not new_photos:

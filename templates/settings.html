@@ -81,6 +81,17 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label">Zeitpuffer vor Event-Aktivierung (Minuten)</label>
+                        <input type="number" class="form-control bg-dark text-light border-secondary"
+                               name="activation_buffer_minutes"
+                               value="{{ config.activation_buffer_minutes }}" min="0" max="120">
+                        <div class="form-text text-muted">
+                            Fotos die bis zu N Minuten <em>vor</em> dem Aktivieren aufgenommen wurden,
+                            werden trotzdem hochgeladen. Nützlich falls du das Event etwas spät aktiviert hast.
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <label class="form-label">Prüf-Intervall (Sekunden)</label>
                         <input type="number" class="form-control bg-dark text-light border-secondary"

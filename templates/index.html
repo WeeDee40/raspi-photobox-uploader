@@ -36,6 +36,13 @@
                             <p class="mb-1"><i class="bi bi-images me-1"></i> <strong>Fotos im Shop:</strong> {{ event.photos_count or 0 }}</p>
                         </div>
                     </div>
+                    {% if event._activated_at %}
+                    <p class="mb-0 mt-2 text-muted small">
+                        <i class="bi bi-clock me-1"></i>
+                        <strong>Aktiviert:</strong> {{ event._activated_at[:19]|replace('T', ' ') }} UTC
+                        <span class="ms-1 text-success">— Nur Fotos ab diesem Zeitpunkt werden hochgeladen</span>
+                    </p>
+                    {% endif %}
                     <!-- Template-Status -->
                     {% if event._template_url %}
                     <div class="d-flex align-items-center gap-2 mt-2 mb-1">
