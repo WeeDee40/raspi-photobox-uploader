@@ -6,6 +6,7 @@ API-Kommunikation, Foto-Tracking, Upload-Funktionen.
 import hashlib
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +69,7 @@ def _default_raw_config():
         "active_environment": "production",
         "photo_path": "/home/patrick/Pictures",
         "template_path": "/home/patrick/.config/pibooth/template.xml",
+        "pibooth_cfg_path": "/home/patrick/.config/pibooth/pibooth.cfg",
         "check_interval": 60,
         "activation_buffer_minutes": 5,
         "supported_extensions": [".jpg", ".jpeg", ".png"],
@@ -132,6 +134,7 @@ def load_config(config_path):
         "api_key": env_data.get("api_key", ""),
         "photo_path": raw.get("photo_path", ""),
         "template_path": raw.get("template_path", ""),
+        "pibooth_cfg_path": raw.get("pibooth_cfg_path", ""),
         "check_interval": raw.get("check_interval", 60),
         "activation_buffer_minutes": raw.get("activation_buffer_minutes", 5),
         "supported_extensions": raw.get("supported_extensions", [".jpg", ".jpeg", ".png"]),
@@ -477,6 +480,50 @@ def api_upload_photo(config, event_id, photo_path):
     except Exception as e:
         print(f"[UPLOAD] FEHLER: {filename} -> {e}")
         return {"success": False, "error": str(e)}
+
+
+def update_pibooth_captures(cfg_path: str, photo_counts: list) -> dict:
+    """Setzt den captures-Wert in der pibooth.cfg auf die übergebenen photo_counts.
+
+    Beispiel: photo_counts=[1, 3]  →  captures = (1, 3)
+              photo_counts=[]      →  captures = (1)   (Fallback)
+
+    Args:
+        cfg_path:     Vollständiger Pfad zur pibooth.cfg
+        photo_counts: Liste der gewünschten Foto-Anzahlen (z.B. [1, 3])
+
+    Returns:
+        dict: {"success": True, "captures": "(1, 3)"} oder {"success": False, "error": "..."}
+    """
+    path = Path(cfg_path)
+    if not path.exists():
+        print(f"[PIBOOTH-CFG] FEHLER: Datei nicht gefunden: {cfg_path}")
+        return {"success": False, "error": f"pibooth.cfg nicht gefunden: {cfg_path}"}
+
+    counts = sorted(set(int(c) for c in photo_counts if 1 <= int(c) <= 4)) if photo_counts else [1]
+    if not counts:
+        counts = [1]
+
+    if len(counts) == 1:
+        new_value = f"({counts[0]})"
+    else:
+        new_value = "(" + ", ".join(str(c) for c in counts) + ")"
+
+    content = path.read_text(encoding="utf-8")
+    new_content, n = re.subn(
+        r"^(captures\s*=\s*).*$",
+        rf"\g<1>{new_value}",
+        content,
+        flags=re.MULTILINE,
+    )
+
+    if n == 0:
+        print(f"[PIBOOTH-CFG] FEHLER: Kein 'captures = ...' in {cfg_path} gefunden")
+        return {"success": False, "error": "captures-Zeile nicht gefunden in pibooth.cfg"}
+
+    path.write_text(new_content, encoding="utf-8")
+    print(f"[PIBOOTH-CFG] OK: captures = {new_value}  ({cfg_path})")
+    return {"success": True, "captures": new_value}
 
 
 def api_download_template(config, template_url, save_path):

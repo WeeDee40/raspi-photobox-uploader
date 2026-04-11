@@ -14,6 +14,7 @@
     "active_environment": "production",
     "photo_path": "/home/patrick/pibooth",
     "template_path": "/home/patrick/.config/pibooth/template.xml",
+    "pibooth_cfg_path": "/home/patrick/.config/pibooth/pibooth.cfg",
     "check_interval": 60,
     "supported_extensions": [".jpg", ".jpeg", ".png"]
 }

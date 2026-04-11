@@ -82,6 +82,19 @@
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label">pibooth.cfg Pfad</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary"
+                               name="pibooth_cfg_path" value="{{ config.pibooth_cfg_path }}"
+                               placeholder="/home/patrick/.config/pibooth/pibooth.cfg">
+                        <div class="form-text text-muted">
+                            Pfad zur pibooth Konfigurationsdatei. Beim Event-Aktivieren wird
+                            <code>captures</code> automatisch auf die gewählten Foto-Anzahlen
+                            des Kunden gesetzt (z.B. <code>(1, 3)</code>).
+                            Leer lassen um die Konfiguration nicht anzupassen.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
                         <label class="form-label">Zeitpuffer vor Event-Aktivierung (Minuten)</label>
                         <input type="number" class="form-control bg-dark text-light border-secondary"
                                name="activation_buffer_minutes"

@@ -22,6 +22,7 @@ from uploader import (
     api_get_event_status,
     api_upload_photo,
     api_download_template,
+    update_pibooth_captures,
     get_new_photos,
     init_db,
     mark_uploaded,
@@ -133,9 +134,20 @@ def activate(event_id):
         elif template_url and not template_path:
             print("[ACTIVATE] Template verfügbar, aber kein template_path konfiguriert.")
 
+        # pibooth.cfg captures aktualisieren
+        pibooth_cfg_path = config.get("pibooth_cfg_path", "")
+        captures = event.get("captures", [1])
+        if pibooth_cfg_path:
+            cap_result = update_pibooth_captures(pibooth_cfg_path, captures)
+            if not cap_result["success"]:
+                print(f"[ACTIVATE] pibooth.cfg-Update fehlgeschlagen: {cap_result.get('error')}")
+        else:
+            print("[ACTIVATE] Kein pibooth_cfg_path konfiguriert — captures nicht aktualisiert.")
+
         # Status im Event-Objekt mitführen (für die UI)
         event["_template_url"] = template_url or ""
         event["_template_ok"] = template_ok
+        event["_captures"] = captures
 
         save_active_event(event)
 
@@ -207,6 +219,7 @@ def settings():
         # Gemeinsame Einstellungen
         raw_config["photo_path"] = request.form.get("photo_path", "")
         raw_config["template_path"] = request.form.get("template_path", "")
+        raw_config["pibooth_cfg_path"] = request.form.get("pibooth_cfg_path", "")
         raw_config["check_interval"] = int(request.form.get("check_interval", 60))
         raw_config["activation_buffer_minutes"] = int(
             request.form.get("activation_buffer_minutes", 5)
